@@ -166,9 +166,11 @@ socratopia-v0/
 
 ## 许可
 
-本仓库尚未声明开源许可证。**没有许可证 ≠ 可以自由使用**——按默认版权规则，作者保留全部权利，他人只能查看、不能复制分发。
+本项目采用 [MIT 许可证](LICENSE)。
 
-计划开源的话，请先选定并添加一个 `LICENSE` 文件（如 MIT / Apache-2.0 / AGPL-3.0），再在 README 里写明。注意与上文「内置角色是版权示例种子」一节配合：换掉角色后再定许可证更稳妥。
+你可以自由使用、复制、修改、合并、发布、分发、再授权，甚至出售，包括商业用途。唯一的义务是：在你分发出去的副本里保留版权声明和这份许可证声明。软件按「原样」提供，不含任何担保。
+
+**有一处例外必须说清楚**：`roles/` 下的内置角色属于《崩坏：星穹铁道》，版权归米哈游所有，**不在本项目的 MIT 授权范围内**（详见上一节）。MIT 覆盖的只是本项目作者自己编写的代码与文档——角色形象不是我能授权的东西。
 
 ---
 
@@ -332,6 +334,8 @@ The two roles shipped in `roles/` are **copyrighted sample seeds** that demonstr
 
 ## License
 
-This repository does not declare an open-source license yet. **No license is not the same as free to use** — under default copyright, the author retains all rights and others may view but not copy or redistribute.
+This project is licensed under the [MIT License](LICENSE).
 
-If you intend to open-source it, add a `LICENSE` file first (MIT / Apache-2.0 / AGPL-3.0, etc.) and state it here. Note the interaction with the "bundled roles" section above: replacing the sample characters before choosing a license is the safer order.
+You are free to use, copy, modify, merge, publish, distribute, sublicense and sell copies of it, including for commercial purposes. The only obligation is to keep the copyright notice and this permission notice in any copy you distribute. The software is provided "as is", without warranty of any kind.
+
+**One exception you should know about**: the bundled characters in `roles/` belong to *Honkai: Star Rail* and are copyrighted by miHoYo. They are **not covered by this project's MIT license** (see the section above). MIT covers only the code and documentation written by this project's author — character likenesses are not mine to license.
