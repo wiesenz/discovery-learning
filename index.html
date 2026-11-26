@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>苏格拉底式自学助手 · v0</title>
+  <!-- 2026-11-26 UI 换肤：移除国风字体外链，改用 styles.css 里的系统无衬线字体栈。
+       不依赖外部字体服务，断网也能完整显示。 -->
+  <link rel="stylesheet" href="styles.css" />
+  <script>
+    // 首帧前应用明暗主题，避免切换时白屏闪烁
+    (function () {
+      try {
+        var t = localStorage.getItem("socratopia_theme");
+        // 2026-11-26 UI 换肤：默认浅色「条纹笔记」风格；用户手动切过主题则记住他的选择
+        document.documentElement.dataset.theme = (t === "dark") ? "dark" : "light";
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <!-- 应用更新提示条：服务端版本变化时显示，点击刷新加载新版本 -->
+  <div id="updateBanner" class="update-banner hidden" title="点击刷新">🔄 检测到应用更新，点击刷新加载新版本</div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="seal">问</span>
+      <div>
+        <h1>苏格拉底式自学助手 <small>v0</small></h1>
+        <p class="tagline">角色引导 · 主动推理 · 不喂答案</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="toggleTheme" class="ghost-btn" title="切换明暗主题">🌓 主题</button>
+      <button id="toggleSettings" class="ghost-btn">⚙️ 设置 / 帮助</button>
+      <button id="toggleProfile" class="ghost-btn" title="查看 / 完善你的学习画像（因材施教依据）">🧭 我的画像</button>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       设置弹窗（20260915 由「插在页面里的内嵌面板」改为浮层）
+       ------------------------------------------------------------------
+       结构：左侧标签导航 + 右侧内容区（一屏一页，不再是一条长条）。
+       两点必须保持的约定：
+       ① 位置留在 <main> 之前 —— 与 #roleEditModal 同为 z-index:50，
+          后出现的盖住先出现的；「新建角色」要从设置里弹出来，必须压住本弹窗。
+       ② #settingsPanel 的 id 不变：smoke/roles/storage-usage 三个 spec 都靠它断言。
+       ============================================================ -->
+  <div id="settingsPanel" class="overlay hidden">
+    <div class="overlay-box settings-modal">
+      <header class="overlay-head">
+        <span class="seal-mini">设</span>
+        <div>
+          <div class="sh-title">设置</div>
+          <div class="sh-sub">API 连接 · 角色 · 数据备份</div>
+        </div>
+        <button id="closeSettings" class="ghost-btn small" type="button">关闭 ✕</button>
+      </header>
+      <div class="settings-body">
+        <nav class="settings-nav" role="tablist">
+          <button class="settings-nav-item active" data-pane="api" type="button">🔌 API 连接</button>
+          <button class="settings-nav-item" data-pane="role" type="button">🎭 角色</button>
+          <button class="settings-nav-item" data-pane="data" type="button">💾 数据与备份</button>
+          <button class="settings-nav-item" data-pane="help" type="button">📖 怎么用</button>
+          <button class="settings-nav-item danger" data-pane="danger" type="button">⚠ 危险区</button>
+        </nav>
+        <div class="settings-panes">
+
+          <section class="settings-pane active" data-pane="api">
+            <div class="settings-fields">
+              <div class="field">
+                <label>服务商预设</label>
+                <select id="providerPreset">
+                  <option value="">— 自定义 —</option>
+                  <option value="deepseek" data-base="https://api.deepseek.com/v1" data-model="deepseek-chat">DeepSeek</option>
+                  <option value="zhipu" data-base="https://open.bigmodel.cn/api/paas/v4" data-model="glm-4-flash">智谱 GLM</option>
+                  <option value="qwen" data-base="https://dashscope.aliyuncs.com/compatible-mode/v1" data-model="qwen-plus">通义千问</option>
+                  <option value="siliconflow" data-base="https://api.siliconflow.cn/v1" data-model="deepseek-ai/DeepSeek-V3">硅基流动</option>
+                </select>
+                <small>选中后自动填入 Base URL 与模型名，只需再填 Key。</small>
+              </div>
+              <div class="field">
+                <label>API 地址（Base URL）</label>
+                <input id="apiBase" type="text" placeholder="https://api.deepseek.com/v1" />
+                <small>OpenAI 兼容接口。DeepSeek / 智谱 / 通义 / 硅基流动都行。</small>
+              </div>
+              <div class="field">
+                <label>API Key</label>
+                <input id="apiKey" type="password" placeholder="sk-..." />
+                <small>只存在你本机浏览器，不会上传给任何人。</small>
+              </div>
+              <div class="field">
+                <label>模型名</label>
+                <input id="apiModel" type="text" placeholder="deepseek-chat" />
+                <small>聊天框里可以直接 <b>Ctrl+V 粘贴截图</b>（也能拖进来或点「🖼 图片」）。但<b>图片只有支持视觉的模型才收</b>——用纯文字模型时，粘进去的图不会被发出去，老师只会看到文字部分（聊天框里会明确提示）。想真的「看图」，把模型换成支持视觉的（如 DeepSeek 的 <code>deepseek-v4-flash-vision-exp</code>）。</small>
+              </div>
+              <div class="field">
+                <label>连接测试</label>
+                <button id="testConn" class="ghost-btn small" type="button">🔌 测试连接</button>
+                <small>发一条最小请求，分情况提示是 Key 问题、CORS 拦截还是地址填错。</small>
+              </div>
+              <div class="field">
+                <label>温度（0~1，越高越跳脱）</label>
+                <input id="apiTemp" type="number" step="0.1" min="0" max="1" value="0.7" />
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-pane="role">
+            <div class="settings-fields">
+              <div class="field">
+                <label>角色</label>
+                <select id="roleSelect"></select>
+                <div class="row role-tools">
+                  <button id="roleNew" class="ghost-btn small" type="button">＋ 新建角色</button>
+                  <button id="roleEdit" class="ghost-btn small" type="button" disabled>✎ 编辑</button>
+                  <button id="roleDel" class="ghost-btn small danger" type="button" disabled>✕ 删除</button>
+                </div>
+                <small>内置角色在 <code>roles/</code> 目录；也可以「新建角色」自定义一位老师（姓名 / 称呼 / 出处必填；开场白 / 人设 / 语气 / 思考文案由 AI 联网模仿风格生成，不可手动编辑），存本机、随配置一起备份。自定义角色可编辑 / 删除。</small>
+              </div>
+              <div class="field">
+                <label>角色头像</label>
+                <div class="avatar-edit">
+                  <img id="avatarPreview" class="avatar-preview" alt="角色头像" />
+                  <div class="avatar-actions">
+                    <input id="avatarInput" type="file" accept="image/*" />
+                    <button id="clearAvatar" class="ghost-btn small" type="button">清除</button>
+                  </div>
+                </div>
+                <small>上传一张图片作为该角色的聊天头像，仅存你本机、不上传。换角色时会自动切换到对应头像。</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-pane="data">
+            <div class="settings-fields">
+              <div class="field">
+                <label>配置备份（换端口 / 换设备不丢数据）</label>
+                <div class="row">
+                  <button id="exportConfig" class="ghost-btn small" type="button">⤓ 导出配置</button>
+                  <button id="importConfig" class="ghost-btn small" type="button">⤒ 导入配置</button>
+                  <input id="importFile" type="file" accept="application/json" class="hidden" />
+                </div>
+                <small>导出会下载一个 .json 备份文件（含 API Key、资料、上课记录、记忆、收藏、头像）；在另一个端口/设备打开本应用后，用「导入配置」选该文件即可恢复。</small>
+              </div>
+              <div class="field">
+                <label>本地存储用量</label>
+                <div class="storage-bar"><span id="storageBarFill"></span></div>
+                <small id="storageUsage">计算中…</small>
+              </div>
+              <div class="field">
+                <label>本次会话用量</label>
+                <small id="usageStats">本次会话还没有请求。</small>
+                <small>累计所有请求的 token 与缓存命中率，刷新页面即清零。想在末尾看到估算金额，先在 config.js 的 pricing 里填入你所用服务商的单价。</small>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-pane="help">
+            <div class="help">
+              <ol>
+                <li>在「API Key」里填入你的大模型密钥（没有就去 DeepSeek / 智谱等官网白嫖一个）。</li>
+                <li>在左侧「📖 我的课程」点「＋ 新增」创建一门课程；选中后粘贴/上传资料（PDF / EPUB / TXT / Markdown / Word(.docx)）。</li>
+                <li>每门课程有独立的资料、课时进度、聊天记录和群聊复盘，互不干扰；切换课程即切换整套上下文。</li>
+                <li>选好角色（默认三月七），在聊天框里说「我想学 XX」或直接提问。</li>
+                <li>AI 不会直接给答案，它会用提问引导你推理——自己想出来才记得牢。</li>
+                <li>想学另一本教材：在左侧教材库点对应教材即可，进度不会混。</li>
+              </ol>
+              <p class="warn">⚠️ 如果发送时报 CORS / 网络错误，说明该接口不允许浏览器直连。最省事的办法：在本文件夹里跑一句
+                <code>python -m http.server 8123</code>，然后浏览器打开 <code>http://localhost:8123/</code> 再试。</p>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-pane="danger">
+            <div class="settings-fields">
+              <div class="field">
+                <label>重置应用</label>
+                <button id="resetApp" class="ghost-btn small danger" type="button">🧹 清空所有数据</button>
+                <small>删除全部课程、聊天记录、学习记忆、收藏、头像与设置（含 API Key），回到首次打开状态。不可恢复。</small>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       我的学习画像弹窗（20260915 从设置面板迁出）
+       ------------------------------------------------------------------
+       为什么独立：它原先是设置里最长的一块（页签 + 分组 + 回收站 + 添加行），
+       而顶栏本就有独立入口「🧭 我的画像」。迁出后设置面板只剩配置项，两边都清爽。
+       迁移安全性：js/profile-ui.js 内部一律用 getElementById 取节点（非构造期缓存），
+       所以整块搬家不破坏任何引用；唯一要同步改的是它原先依赖的 els.settingsPanel。
+       ============================================================ -->
+  <div id="profileModal" class="overlay hidden">
+    <div class="overlay-box profile-modal">
+      <header class="overlay-head">
+        <span class="seal-mini">像</span>
+        <div>
+          <div class="sh-title">我的学习画像</div>
+          <div class="sh-sub">AI 对你的观察 · 可增删改 · 每节课注入提示词</div>
+        </div>
+        <button id="closeProfile" class="ghost-btn small" type="button">关闭 ✕</button>
+      </header>
+      <div class="profile-modal-body">
+        <div class="profile-shell">
+          <div class="profile-head">
+            <div class="profile-head-l">
+              <p class="profile-summary" id="profileSummary">AI 会在上课 / 复习时自动提炼对你的观察，你也可以随时添加、修改或删除。聊天中说「记住 XX」也会即时写入。</p>
+            </div>
+            <div class="profile-head-r">
+              <button class="pf-tool" id="profileRestructureBtn" type="button" title="让 AI 把所有 AI 推断重新压缩成更精炼的画像">↻ 让 AI 重新梳理</button>
+              <button class="pf-tool ghost" id="profileShowArchiveBtn" type="button">回收站 <span class="pf-badge" id="profileArchiveCount">0</span></button>
+            </div>
+          </div>
+
+          <div class="profile-tabs" role="tablist">
+            <button class="pf-tab active" data-tab="all" type="button">全部 <span class="pf-tab-num" id="pfTabAll">0</span></button>
+            <button class="pf-tab" data-tab="user" type="button">我写的 <span class="pf-tab-num" id="pfTabUser">0</span></button>
+            <button class="pf-tab" data-tab="ai" type="button">AI 推断 <span class="pf-tab-num" id="pfTabAi">0</span></button>
+          </div>
+
+          <div class="profile-groups" id="profileGroups"></div>
+
+          <div class="profile-archive hidden" id="profileArchive"></div>
+
+          <div class="profile-add-row">
+            <input id="profileAddInput" type="text" placeholder="补充一句关于我的描述，回车或点「添加」（也可在聊天里说「记住 XX」）" />
+            <select id="profileAddDimension" title="选择这条属于哪个维度">
+              <option value="learning_style">学习风格</option>
+              <option value="thinking_habit">思维习惯</option>
+              <option value="personality">性格倾向</option>
+              <option value="guide">适合的引导</option>
+              <option value="knowledge_base">知识基础</option>
+              <option value="general" selected>其它</option>
+            </select>
+            <button id="profileAddBtn" class="pf-add-btn" type="button">＋ 添加</button>
+          </div>
+
+          <div class="profile-foot">
+            <span class="profile-foot-hint" id="profileFootHint">AI 上限 30 条；超出会自动丢弃最旧的观察。</span>
+            <button id="clearProfile" class="pf-tool danger" type="button">清除全部画像</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <main class="layout">
+    <!-- 左侧：课程中心 -->
+    <aside class="sidebar">
+      <!-- 顶部：设置下拉 -->
+      <div class="course-topbar" id="courseTopbar" title="点击折叠 / 展开课程区">
+        <div class="course-brand">
+          <span class="seal-mini">课</span>
+          <span class="cb-title">我的课程</span>
+          <span class="collapse-arrow">▾</span>
+        </div>
+        <div class="cb-actions">
+          <button id="courseExpandAll" type="button" class="ghost-btn small" title="全部折叠 / 展开课程">⇕</button>
+        </div>
+      </div>
+
+      <!-- 课程列表（可展开下拉菜单） -->
+      <section class="course-library">
+        <div class="course-search">
+          <input id="bookSearch" type="search" placeholder="🔍 搜索课程 / 资料…" />
+        </div>
+        <div id="bookList" class="course-list"></div>
+        <div id="bookEmpty" class="mem-empty">还没有课程，点下方「＋ 上传」开始。</div>
+        <button id="addBook" class="ghost-btn small add-course-btn" type="button">＋ 上传新课程</button>
+      </section>
+
+      <!-- 踏石留印：按当前教材的跨会话学习记忆（20260915 由「修习履历」更名） -->
+      <section class="memory-panel">
+        <header class="scroll-head collapsible-head" data-target="memory">
+          <span class="seal-mini">印</span>
+          <div>
+            <div class="sh-title">踏石留印</div>
+            <div class="sh-sub">掌握度 · 待复习</div>
+          </div>
+          <span class="collapse-arrow">▾</span>
+        </header>
+        <div id="memoryList" class="mem-list"></div>
+        <div id="memoryEmpty" class="mem-empty">还没有学习记录。上完一节课点「📚 下课」，会自动记下你的掌握情况。</div>
+      </section>
+
+      <!-- 我的收藏：已收藏的知识总结卡（20260915 由「知识卡片」更名） -->
+      <section class="collection-panel">
+        <header class="scroll-head collapsible-head" data-target="collection">
+          <span class="seal-mini">藏</span>
+          <div>
+            <div class="sh-title">我的收藏</div>
+            <div class="sh-sub">已收藏的总结</div>
+          </div>
+          <span class="collapse-arrow">▾</span>
+        </header>
+        <div id="collectionList" class="mem-list"></div>
+        <div id="collectionEmpty" class="mem-empty">还没收藏任何总结卡。下课后的「知识总结卡」里点「☆ 收入卷宗」即可。</div>
+      </section>
+    </aside>
+
+    <!-- 右侧：聊天 -->
+    <section class="chat">
+      <div class="chat-search" id="chatSearchBar">
+        <span class="cs-icon">🔍</span>
+        <input id="chatSearch" type="search" placeholder="搜索本课聊天…" />
+        <span id="chatSearchCount" class="cs-count"></span>
+        <button id="chatSearchClear" type="button" class="cs-clear" title="清除搜索">✕</button>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div class="composer">
+        <div class="familiarity">
+          <span class="fam-label">我的基础：</span>
+          <button class="chip" data-fam="完全没接触过（小白）">🌱 完全小白</button>
+          <button class="chip" data-fam="学过一点">🌿 学过一点</button>
+          <button class="chip" data-fam="比较熟">🌳 比较熟</button>
+        </div>
+        <div id="attachBar" class="attach-bar hidden"></div>
+        <textarea id="userInput" placeholder="说点啥～（回车发送，Shift+回车换行；截图可直接 Ctrl+V 粘贴）"></textarea>
+        <div class="ctx-meter" id="ctxMeter" title="老师精力 = 当前本节课发送给模型的内容体量。精力吃紧时建议下课休息；超出时系统会自动精简最久远的对话，保证不中断。">
+          <span class="ctx-label" id="ctxLabel">老师精力</span>
+          <div class="ctx-bar"><span id="ctxBarFill"></span></div>
+          <span class="ctx-num" id="ctxNum">—</span>
+        </div>
+        <div class="ctx-hint" id="ctxHint"></div>
+        <div class="composer-actions">
+          <button id="startLessonBtn" class="primary-btn" disabled>📚 上课</button>
+          <button id="lessonEnd" class="ghost-btn">📚 下课</button>
+          <!-- U+FE0F 不能省：🖼 的 Emoji_Presentation 默认为 No，不带变体选择符时
+               会走文字字形（在本机截图上就是个没有颜色的小方块），与 ⚙️ 同理。 -->
+          <button id="attachBtn" class="ghost-btn" type="button" title="添加图片：也可以直接 Ctrl+V 粘贴截图，或把图片拖进输入框">🖼️ 图片</button>
+          <input id="attachInput" type="file" accept="image/*" multiple hidden />
+          <button id="sendBtn" class="primary-btn">发送 ➤</button>
+          <button id="stopBtn" class="ghost-btn danger" style="display:none" title="停止当前请求">⏹ 停止</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 课程资料编辑模态框（由 📤 按钮或"上传新课程"触发） -->
+  <div id="courseEditModal" class="overlay hidden">
+    <div class="overlay-box course-edit-modal">
+      <header class="overlay-head">
+        <span class="seal-mini">料</span>
+        <div>
+          <div class="sh-title" id="cemTitle">编辑课程资料</div>
+          <div class="sh-sub" id="cemSub">上传或粘贴学习材料，AI 会据此引导你</div>
+        </div>
+        <button id="closeCourseEdit" class="ghost-btn small">关闭 ✕</button>
+      </header>
+      <div class="cem-body">
+        <div class="field">
+          <label>课程名称</label>
+          <input id="bookTitle" type="text" placeholder="例如：Python 入门" />
+        </div>
+        <div class="field">
+          <label>学习资料（该课程唯一知识源）</label>
+          <textarea id="material" placeholder="把教材 / 笔记文本粘贴到这里；或点下面上传文件（PDF / EPUB / TXT / Markdown / Word）。AI 主要依据这里引导你。"></textarea>
+          <div class="row">
+            <input id="fileInput" type="file" accept=".txt,.md,.text,.pdf,.epub,.docx,.doc" />
+            <button id="clearMaterial" class="ghost-btn small">清空</button>
+            <button id="genIntro" class="ghost-btn small">✨ 开场导读</button>
+          </div>
+          <small id="materialCount">0 字</small>
+        </div>
+      </div>
+      <div class="cem-foot">
+        <button id="cemSave" class="primary-btn" type="button">保存并开始学习</button>
+        <button id="cemCancel" class="ghost-btn" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 群聊复盘浮层 -->
+  <div id="groupOverlay" class="overlay hidden">
+    <div class="overlay-box">
+      <header class="overlay-head">
+        <span class="seal-mini">群</span>
+        <div>
+          <div class="sh-title" id="groupTitle">课后群聊复盘</div>
+          <div class="sh-sub" id="groupSub">老师们正在点评你的表现</div>
+        </div>
+        <div class="overlay-actions">
+          <button id="groupStop" class="ghost-btn small danger" title="停止当前群聊生成（唤老师们歇笔）">⏹ 停笔</button>
+          <button id="closeGroup" class="ghost-btn small">收起 ✕</button>
+        </div>
+      </header>
+      <div id="groupMessages" class="messages group-msgs"></div>
+      <div class="composer">
+        <textarea id="groupInput" placeholder="在群里说点啥～（回车发言）"></textarea>
+        <div class="composer-actions">
+          <button id="groupSend" class="primary-btn">发言 ➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 学习复盘浮层（仅查看聊天记录，只读） -->
+  <div id="reviewOverlay" class="overlay hidden">
+    <div class="overlay-box review-box">
+      <header class="overlay-head">
+        <span class="seal-mini">复</span>
+        <div>
+          <div class="sh-title" id="reviewTitle">学习复盘</div>
+          <div class="sh-sub" id="reviewSub">仅查看聊天记录 · 不干扰当前上课</div>
+        </div>
+        <button id="closeReview" class="ghost-btn small">收起 ✕</button>
+      </header>
+      <div class="review-search">
+        <span class="cs-icon">🔍</span>
+        <input id="reviewSearch" type="search" placeholder="跨课时搜索聊天…" />
+        <button id="reviewSearchClear" type="button" class="cs-clear" title="清除搜索">✕</button>
+      </div>
+      <div id="reviewMessages" class="messages review-msgs"></div>
+      <div class="review-foot">仅查看模式 · 不解锁上课状态 · 不影响当前课程进度</div>
+    </div>
+  </div>
+
+  <!-- 课后笔记浮层 -->
+  <div id="notesOverlay" class="overlay hidden">
+    <div class="overlay-box notes-box">
+      <header class="overlay-head">
+        <span class="seal-mini">笔</span>
+        <div>
+          <div class="sh-title">课后笔记</div>
+          <div class="sh-sub" id="notesSub">本节课的学习笔记</div>
+        </div>
+        <button id="closeNotes" class="ghost-btn small">收起 ✕</button>
+      </header>
+      <div id="notesBody" class="notes-body"></div>
+    </div>
+  </div>
+
+  <!-- 自定义角色编辑浮层（新建 / 编辑客户自行定制的角色） -->
+  <div id="roleEditModal" class="overlay hidden">
+    <div class="overlay-box role-edit-modal">
+      <header class="overlay-head">
+        <span class="seal-mini">角</span>
+        <div>
+          <div class="sh-title" id="roleEditTitle">新建角色</div>
+          <div class="sh-sub" id="roleEditSub">指定一位老师，AI 将联网模仿其语言风格作为授课人设</div>
+        </div>
+        <button id="closeRoleEdit" class="ghost-btn small">关闭 ✕</button>
+      </header>
+      <!-- 合规提示横幅：固化编辑流程，规避侵权风险 -->
+      <div class="compliance-banner" id="roleEditBanner">
+        <span class="cb-icon">⚠</span>
+        <div class="cb-text">
+          <strong>合规提示</strong>
+          本工具将根据您指定的老师，<strong>根据互联网公开数据模仿其语言风格召唤老师，并非原著角色</strong>；不与原作 / 作者 / 权利方产生关联。请勿冒用真实教师姓名，商用前请确认已获授权或使用原创设定。
+        </div>
+      </div>
+      <div class="cem-body">
+        <!-- 20260914：移除「类型」下拉。该信息由「作品出处」承担（用户填「原创」或具体作品名），
+             AI 侧按出处自行判断是否联网检索，少一步必填、少一个需要维护的选项枚举。 -->
+        <div class="field">
+          <label>角色名（显示名，也作为内部标识）<span class="required-mark"> *</span></label>
+          <input id="roleEditName" type="text" placeholder="例如：墨秋 / 钟离 / 魏璎珞" />
+        </div>
+        <div class="field">
+          <label>作品出处（该角色出自哪部作品）<span class="required-mark"> *</span></label>
+          <input id="roleEditSeries" type="text" placeholder="原创 / 原神 / 甄嬛传 / 史记·苏秦列传" />
+        </div>
+        <div class="field">
+          <label>对你的称呼（可选，默认「同学」）</label>
+          <input id="roleEditAlias" type="text" placeholder="例如：旅者 / 同道 / 同学" />
+        </div>
+
+        <!-- 生成细节：商用时由 ROLE_GEN_UI_ENABLED 控制整体不渲染；开发期默认收起，点开可核对 AI 输出 -->
+        <button type="button" id="roleGenToggle" class="gen-details-toggle">显示生成细节 ▾</button>
+        <div id="roleGenDetails" class="role-gen-details hidden">
+          <div class="ai-fields-divider"><span>以下 4 项由 AI 自动生成，不可手动编辑；如需修改请点下方按钮重新生成</span></div>
+
+          <div class="field">
+            <label>AI 生成设置<span class="readonly-tag">联网提炼风格 · 非引用原话</span></label>
+            <div class="row">
+              <button id="roleAutoFill" class="ghost-btn small" type="button">✨ AI 自动补全 / 重新生成</button>
+            </div>
+            <small>AI 会先联网检索该角色在原作 / 相关资料中的代表性语料，<strong>仅作为风格参考而非引用原话</strong>，再据此生成下方的开场白、人设、语气与思考文案，作为授课语言风格（需先在 ⚙️ 设置里填 API Key；若你配置的接口后端不支持联网，则退回模型自身知识）。</small>
+          </div>
+
+          <div class="field readonly-field">
+            <label>开场白<span class="readonly-tag">AI 生成 · 不可编辑</span></label>
+            <textarea id="roleEditOpening" placeholder="点上方按钮生成" readonly></textarea>
+          </div>
+          <div class="field readonly-field">
+            <label>人设背景（这位老师是谁）<span class="readonly-tag">AI 生成 · 不可编辑</span></label>
+            <textarea id="roleEditPersona" placeholder="点上方按钮生成" readonly></textarea>
+          </div>
+          <div class="field readonly-field">
+            <label>语气 / 表达方式（怎么说话）<span class="readonly-tag">AI 生成 · 不可编辑</span></label>
+            <textarea id="roleEditVoice" placeholder="点上方按钮生成" readonly></textarea>
+          </div>
+          <div class="field readonly-field">
+            <label>思考等待文案（每行一句）<span class="readonly-tag">AI 生成 · 不可编辑</span></label>
+            <textarea id="roleEditThinking" placeholder="点上方按钮生成" readonly></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="cem-foot">
+        <button id="roleEditSave" class="primary-btn" type="button">保存角色</button>
+        <button id="roleEditCancel" class="ghost-btn" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 原文浏览浮层（只读，不消耗 token） -->
+  <div id="sourceOverlay" class="overlay hidden">
+    <div class="overlay-box source-box">
+      <header class="overlay-head">
+        <span class="seal-mini">文</span>
+        <div>
+          <div class="sh-title" id="sourceTitle">原文浏览</div>
+          <div class="sh-sub" id="sourceSub">仅浏览，不消耗 token</div>
+        </div>
+        <button id="closeSource" class="ghost-btn small">收起 ✕</button>
+      </header>
+      <div class="source-select-row">
+        <label for="sourceLessonSelect">章节：</label>
+        <select id="sourceLessonSelect" class="source-select"></select>
+      </div>
+      <div class="source-find-row">
+        <input id="sourceFindInput" class="source-find" type="text" placeholder="在原文中查找…（回车下一个）" autocomplete="off" />
+        <span id="sourceFindCount" class="source-find-count"></span>
+        <button id="sourceFindPrev" class="ghost-btn small" type="button">上一个</button>
+        <button id="sourceFindNext" class="ghost-btn small" type="button">下一个</button>
+        <button id="sourceFindClear" class="ghost-btn small" type="button">清除</button>
+      </div>
+      <div id="sourceText" class="source-text"></div>
+    </div>
+  </div>
+
+  <!-- 下课答题浮层 -->
+  <div id="quizOverlay" class="overlay hidden">
+    <div class="overlay-box quiz-box">
+      <header class="overlay-head">
+        <span class="seal-mini">测</span>
+        <div>
+          <div class="sh-title">随堂测验 · 闯关</div>
+          <div class="sh-sub">做完这关，才算真正下课</div>
+        </div>
+        <button id="closeQuiz" class="ghost-btn small">稍后做 ✕</button>
+      </header>
+      <div id="quizBody" class="quiz-overlay-body"></div>
+    </div>
+  </div>
+
+  <!-- 大纲生成进度浮层（长书分块提取时持久显示进度） -->
+  <div id="outlineProgressOverlay" class="overlay hidden">
+    <div class="overlay-box outline-progress-box">
+      <header class="overlay-head">
+        <span class="seal-mini">纲</span>
+        <div>
+          <div class="sh-title" id="outlineProgressTitle">正在生成大纲</div>
+          <div class="sh-sub" id="outlineProgressSub">长书会分多段通读，请稍候</div>
+        </div>
+      </header>
+      <div class="outline-progress-body">
+        <div class="outline-progress-track"><div id="outlineProgressBar" class="outline-progress-bar" style="width:0%"></div></div>
+        <div class="outline-progress-detail" id="outlineProgressDetail">准备中…</div>
+        <!-- 停止按钮必须做在浮层里（2026-09-12 修 B8b）：本浮层是 position:fixed/inset:0/z-index:50，
+             会把页面里的「⏹ 停止」完全遮住 —— 原先文案写着"可随时点停止"其实是句假话。 -->
+        <div class="outline-progress-foot">
+          <button type="button" id="outlineProgressStop" class="ghost-btn danger small">⏹ 停止生成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图片放大查看（点聊天里任意一张图 / 待发送缩略图打开；Esc 或点击关闭）。
+       只做一个共用节点，不为每张图各建一个浮层。 -->
+  <div id="imgZoom" class="img-zoom hidden" role="dialog" aria-label="查看大图">
+    <img id="imgZoomPic" alt="查看大图" />
+    <div class="img-zoom-tip">点击任意处 / 按 Esc 关闭</div>
+  </div>
+
+  <!-- 第三方库：保持 classic <script> 全局方式加载（pdfjsLib / JSZip / mammoth） -->
+  <script src="vendor/pdf.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="vendor/mammoth.browser.js"></script>
+  <!-- 纯函数核心：UMD，同时兼容浏览器全局（SocratopiaCore）与 Node 单测，保持 classic 加载 -->
+  <script src="js/core.js"></script>
+  <!-- 应用入口：ESM。config.js / roles/*.js 由 app.js 顶部 import 加载（需 http 服务，file:// 双击不再支持） -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

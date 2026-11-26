@@ -1,0 +1,55 @@
+# ===== PyInstaller 构建产物 =====
+_build/build/
+_build/dist/
+# 受限环境里用 --workpath/--distpath 绕开批量删除保护时的产物（本机 build.bat 不产生）
+_build/pyi_*/
+# 嵌入的 webapp 由 build.bat 从根目录源码同步生成，不入库
+# （避免根目录 app.js 与 _build/webapp/app.js 两份源漂移导致“改了不生效”）
+_build/webapp/
+# 打包产出的 exe（二进制，可随时重建）
+Socratopia.exe
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== 本地导出的配置备份（可能含 API Key，绝不入库）=====
+*.export.json
+socratopia_config_*.json
+
+# ===== 系统 / 编辑器杂项 =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ===== 依赖 / 工程化产物 =====
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.eslintcache
+
+# ===== Playwright E2E 运行产物 =====
+test-results/
+playwright-report/
+blob-report/
+
+# ===== 项目私有记忆（不入库）=====
+.workbuddy/
+
+# ===== 损坏/废弃的 .git 目录（20260913 补）=====
+# 2026-09-07 仓库损坏后手工挪出来的目录（HEAD 已坏、读不出任何提交）。
+# 它此前【没有】被 ignore，于是任何 `git add -A` 都会把 0.66MB 死 git 对象提交进库。
+.git.corrupt-*/
+
+# ===== Office 临时锁文件（~$ 开头，垃圾文件）=====
+~$*
+
+# ===== 手工备份文件（styles.css.bak-20260915 之类）=====
+# 这类文件只是本地临时快照，不入库；留着也无妨，但绝不能被 git add -A 带进去。
+*.bak
+*.bak-*
+*.orig

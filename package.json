@@ -1,0 +1,18 @@
+{
+  "name": "socratopia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "苏格拉底式自学助手 · 角色引导 · 主动推理 · 不喂答案",
+  "scripts": {
+    "start": "python -m http.server 8199 --bind 127.0.0.1",
+    "dev": "vite",
+    "test": "node js/core.test.js && node js/config.test.mjs && node js/adaptive.test.mjs && node js/outline.test.mjs && node js/profile.test.mjs && node js/prompt.test.mjs && node js/role-editor.test.mjs && node js/source-hygiene.test.mjs && node js/store.test.mjs && node js/api.test.mjs && node js/dom.test.mjs && node js/group.test.mjs && node js/contract.test.mjs && node js/image-input.test.mjs",
+    "test:e2e": "playwright test",
+    "lint": "eslint app.js config.js js/*.js roles/*.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "eslint": "^8.57.0",
+    "vite": "^8.2.0"
+  }
+}
